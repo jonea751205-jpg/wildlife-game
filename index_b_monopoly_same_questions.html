@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>你的好意，可能害了牠｜大富翁版</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans TC","Microsoft JhengHei",Arial,sans-serif;background:#eef5df;color:#2b2117}
+header{background:#2f7d32;color:white;text-align:center;font-size:28px;font-weight:900;padding:16px}
+.wrap{max-width:1250px;margin:auto;padding:14px;display:grid;grid-template-columns:1fr 330px;gap:14px}
+.board{display:grid;grid-template-columns:repeat(7,1fr);grid-template-rows:repeat(7,95px);gap:6px;background:#2b2117;border:6px solid #2b2117;border-radius:22px;overflow:hidden}
+.cell{background:#fff8df;padding:6px;font-size:12px;position:relative;border-radius:8px;overflow:hidden}
+.good{background:#dff4d4}.bad{background:#ffdeda}.special{background:#fff0a8}.start{background:#fff8c8}
+.empty{background:#fff7df}
+.center{grid-column:2/7;grid-row:2/7;background:#fff7df;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+.center h1{font-size:54px;margin:0}.wood{background:#8b5429;color:white;font-size:28px;font-weight:900;border-radius:14px;padding:12px 24px;margin:14px}
+.num{font-size:20px;font-weight:900}.score{font-size:18px;font-weight:900}.plus{color:#2f7d32}.minus{color:#c94545}
+.tokens{position:absolute;left:5px;bottom:5px;display:flex;gap:3px;flex-wrap:wrap}
+.token{width:26px;height:26px;border-radius:50%;border:2px solid #222;display:grid;place-items:center;color:white;font-weight:900;box-shadow:0 2px 5px #0007}
+.panel{background:white;border:4px solid #2b2117;border-radius:18px;padding:14px}
+button,select,input{font:inherit}button{width:100%;border:0;border-radius:999px;background:#2f7d32;color:white;font-weight:900;padding:13px;margin:6px 0;box-shadow:0 4px 0 #1d511f}
+.brown{background:#8b5429;box-shadow:0 4px 0 #573214}.red{background:#c94545;box-shadow:0 4px 0 #7c2925}
+.player{border:2px solid #ddd;border-radius:12px;padding:8px;margin:6px 0}.now{outline:4px solid #ffd75a}
+.dice{text-align:center;font-size:62px}.log{height:230px;overflow:auto;border-top:1px solid #ddd;padding-top:8px;line-height:1.45}
+.modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:20px;z-index:9}
+.card{max-width:560px;background:#fffdf0;border:4px solid #2b2117;border-radius:20px;padding:22px;text-align:center}
+@media(max-width:900px){.wrap{grid-template-columns:1fr}.board{grid-template-rows:repeat(7,78px)}.center h1{font-size:32px}.wood{font-size:20px}.cell{font-size:10px}.token{width:21px;height:21px}}
+</style>
+</head>
+<body>
+<header>你的好意，可能害了牠｜不餵食野生動物大富翁</header>
+
+<div id="setup" class="wrap">
+<div class="board" id="preview"></div>
+<div class="panel">
+<h2>開始遊戲</h2>
+<label>玩家人數 <select id="count" onchange="setupPlayers()"><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></label><br>
+<label>遊戲圈數 <select id="goal"><option value="2">2圈</option><option value="1">1圈快速版</option><option value="3">3圈挑戰版</option></select></label>
+<div id="playerSetup"></div>
+<button onclick="startGame()">開始</button>
+<p>題目與加扣分沿用原本版本，只是改成更像大富翁的大格子棋盤。</p>
+</div>
+</div>
+
+<div id="game" class="wrap" style="display:none">
+<div class="board" id="board"></div>
+<div class="panel">
+<h2>玩家區</h2><div id="stats"></div>
+<div id="dice" class="dice">🎲</div>
+<button id="rollBtn" onclick="roll()">擲骰子</button>
+<button class="brown" onclick="rules()">規則</button>
+<button class="red" onclick="location.reload()">重新開始</button>
+<div id="log" class="log"><b>遊戲記錄</b></div>
+</div>
+</div>
+
+<div id="modal" class="modal"><div id="modalCard" class="card"></div></div>
+
+<script>
+const colors=["#d94a38","#2476b8","#3b9441","#e2a91f","#8b55bd","#e36aa5"];
+const icons=["1","2","3","4","5","6"];
+const animals=["🐒 台灣獼猴","🦌 梅花鹿","🐿️ 松鼠","🦅 猛禽","🦉 貓頭鷹","🕊️ 野鳥"];
+const spaces=[
+["起點","經過 +100",0,"start"],["看到猴子不餵食","猴子能自己找食物",150,"good"],["餵食鴿子","可能造成群聚與疾病",-150,"bad"],["機會卡","抽一張機會卡",0,"special"],
+["觀察野生動物保持距離","尊重生活空間",150,"good"],["餵食松鼠","改變覓食習慣",-150,"bad"],["走步道不偏離路線","保護棲地",100,"good"],
+["大聲喧嘩驚嚇動物","造成緊張",-100,"bad"],["撿起垃圾保護環境","減少誤食垃圾",150,"good"],["宣導不餵食野生動物","讓更多人知道",200,"good"],
+["餵食野生動物可能害了牠","增加風險",-200,"bad"],["用相機拍照不干擾動物","安靜觀察",100,"good"],
+["追趕野生動物","造成壓力與受傷",-200,"bad"],["機會卡","抽一張機會卡",0,"special"],["梅花鹿需要自由","不需要你的食物",150,"good"],
+["採摘野生植物","破壞生態平衡",-150,"bad"],["機會卡","抽一張機會卡",0,"special"],["生態獎勵","再擲一次",0,"special"],
+["亂丟垃圾","破壞棲地",-150,"bad"],["動物救傷中心","協助救援",200,"good"],["餵食野生動物改變行為","搶食攻擊風險",-200,"bad"],
+["保護棲地人人有責","共同守護自然",150,"good"],["發現受傷動物通報救援","正確通報",200,"good"],["野保巡查隊","休息一回合",0,"special"]
+];
+const cards=[
+["你告訴朋友不要餵食猴子",200],["你使用望遠鏡觀察野生動物",100],["你撿起步道垃圾",150],["你參加野保宣導活動",200],["你通報受傷野生動物",250],["你提醒遊客保持距離",150],
+["你偷偷餵食猴子",-250],["你用食物吸引動物拍照",-200],["你餵食野鳥",-200],["你追趕野生動物",-200],["你亂丟垃圾",-150],["你干擾動物休息",-150]
+];
+const order=[0,1,2,3,4,5,6,23,null,null,null,null,null,7,22,null,null,null,null,null,8,21,null,null,null,null,null,9,20,null,null,null,null,null,10,19,null,null,null,null,null,11,18,17,16,15,14,13,12];
+let players=[],turn=0,goal=2,ended=false;
+
+function setupPlayers(){
+ let n=+document.getElementById("count").value, box=document.getElementById("playerSetup"); box.innerHTML="";
+ for(let i=0;i<n;i++) box.innerHTML+=`<div class="player"><b>玩家${i+1}</b><br><input id="name${i}" value="玩家${i+1}" style="width:95px"> <select id="animal${i}">${animals.map(a=>`<option>${a}</option>`).join("")}</select></div>`;
+}
+function draw(target){
+ let el=document.getElementById(target); el.innerHTML="";
+ order.forEach(idx=>{
+  if(idx===null){el.innerHTML+="<div class='cell empty'></div>";return}
+  let s=spaces[idx], tokens=players.map((p,i)=>p.pos===idx?`<span class="token" style="background:${p.color}">${i+1}</span>`:"").join("");
+  el.innerHTML+=`<div class="cell ${s[3]}"><span class="num">${idx}</span><br><b>${s[0]}</b><br><small>${s[1]}</small><br><span class="score ${s[2]>0?'plus':s[2]<0?'minus':''}">${s[2]>0?'+':''}${s[2]||''}</span><div class="tokens">${tokens}</div></div>`;
+ });
+ el.innerHTML+=`<div class="center"><h1>你的好意，可能害了牠</h1><div class="wood">不餵食野生動物大富翁</div><p><b>不餵食、不干擾、不追逐、不破壞棲地</b></p></div>`;
+}
+function startGame(){
+ goal=+document.getElementById("goal").value; let n=+document.getElementById("count").value; players=[];
+ for(let i=0;i<n;i++) players.push({name:document.getElementById("name"+i).value,animal:document.getElementById("animal"+i).value,score:1000,pos:0,laps:0,skip:false,color:colors[i]});
+ document.getElementById("setup").style.display="none"; document.getElementById("game").style.display="grid"; draw("board"); stats(); addLog("遊戲開始！");
+}
+function stats(){document.getElementById("stats").innerHTML=players.map((p,i)=>`<div class="player ${i===turn?'now':''}"><b style="color:${p.color}">${p.name}</b><br>${p.animal}<br>野保積分：<b>${p.score}</b><br>圈數：${p.laps}/${goal}｜位置：${p.pos}</div>`).join("")}
+function roll(){
+ if(ended)return; let p=players[turn];
+ if(p.skip){p.skip=false;addLog(`${p.name} 休息一回合。`);next();return}
+ let d=Math.floor(Math.random()*6)+1; document.getElementById("dice").textContent=["⚀","⚁","⚂","⚃","⚄","⚅"][d-1];
+ document.getElementById("rollBtn").disabled=true; let moved=0;
+ let timer=setInterval(()=>{p.pos=(p.pos+1)%24;if(p.pos===0){p.laps++;p.score+=100;addLog(`${p.name} 經過起點 +100。`)}moved++;draw("board");stats();if(moved>=d){clearInterval(timer);document.getElementById("rollBtn").disabled=false;handle(p,d)}},240)
+}
+function handle(p,d){
+ let s=spaces[p.pos], msg=`${p.name} 擲出 ${d}，到「${s[0]}」。`;
+ if(s[0]==="機會卡"){let c=cards[Math.floor(Math.random()*cards.length)];p.score+=c[1];msg+=`<br>🎴 ${c[0]} ${c[1]>0?'+':''}${c[1]}`;popup("機會卡",`${c[0]}<br><span class="${c[1]>0?'plus':'minus'}">${c[1]>0?'+':''}${c[1]} 分</span>`)}
+ else if(s[0]==="生態獎勵"){addLog(msg+" 再擲一次！");stats();return}
+ else if(s[0]==="野保巡查隊"){p.skip=true;msg+=" 下回合休息。"}
+ else{p.score+=s[2]; if(s[2]<0) msg+="<br><b>大家一起喊：你的好意，可能害了牠！</b>"}
+ addLog(msg);draw("board");stats(); if(players.some(x=>x.laps>=goal))finish();else next();
+}
+function next(){turn=(turn+1)%players.length;stats()}
+function addLog(t){document.getElementById("log").innerHTML=t+"<hr>"+document.getElementById("log").innerHTML}
+function rank(s){if(s>=2000)return"🏆 野保超人";if(s>=1700)return"🥇 野保達人";if(s>=1400)return"🥈 生態守護者";if(s>=1100)return"🥉 野保小尖兵";return"🌱 保育新手"}
+function finish(){ended=true;let sorted=[...players].sort((a,b)=>b.score-a.score);popup("遊戲結束",sorted.map((p,i)=>`<p><b>${i+1}. ${p.name}</b>：${p.score}分<br>${rank(p.score)}</p>`).join("")+"<hr>記住：野生動物不需要人類餵食。")}
+function popup(t,b){document.getElementById("modalCard").innerHTML=`<h2>${t}</h2><p>${b}</p><button onclick="closeModal()">知道了</button>`;document.getElementById("modal").style.display="flex"}
+function closeModal(){document.getElementById("modal").style.display="none"}
+function rules(){popup("規則","擲骰子前進。正確行為加分，錯誤行為扣分。經過起點 +100。踩到機會卡就抽卡。完成指定圈數後，積分最高者獲勝。")}
+setupPlayers(); draw("preview");
+</script>
+</body>
+</html>
